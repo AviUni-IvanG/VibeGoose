@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game of the Goose (Jeu de l'Oie)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+        }
+
+        /* Responsive board container */
+        .board-container {
+            position: relative;
+            aspect-ratio: 16 / 11;
+            width: 100%;
+            max-width: 900px;
+        }
+
+        /* Smooth token position changes */
+        .player-token {
+            transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+        }
+
+        .active-turn-ring {
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.5), 0 0 20px rgba(245, 158, 11, 0.4);
+            animation: pulse-ring 1.8s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.99); opacity: 0.9; }
+            50% { transform: scale(1.02); opacity: 1; }
+            100% { transform: scale(0.99); opacity: 0.9; }
+        }
+
+        /* 3D Dice styling */
+        .dice {
+            width: 52px;
+            height: 52px;
+            background: #ffffff;
+            border-radius: 12px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            padding: 6px;
+            box-shadow: inset 0 -4px 0 #cbd5e1, 0 8px 15px rgba(0,0,0,0.3);
+            transition: transform 0.1s ease;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            background-color: #0f172a;
+            border-radius: 50%;
+            justify-self: center;
+            align-self: center;
+        }
+
+        .rolling {
+            animation: roll-dice 0.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes roll-dice {
+            0% { transform: rotate(0deg) scale(0.9); }
+            50% { transform: rotate(180deg) scale(1.1); }
+            100% { transform: rotate(360deg) scale(0.9); }
+        }
+
+        /* Banner bounce animation */
+        @keyframes banner-pop {
+            0% { transform: translate(-50%, -20px) scale(0.9); opacity: 0; }
+            100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+        }
+
+        .banner-animated {
+            animation: banner-pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Custom Scrollbar for game logs & setup list */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="p-3 md:p-6 flex flex-col items-center justify-center min-h-screen">
+
+    <!-- Header Bar -->
+    <header class="w-full max-w-7xl flex flex-wrap justify-between items-center mb-4 px-4 py-3 bg-slate-800/80 backdrop-blur-md rounded-2xl border border-slate-700/60 shadow-xl">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-xl border border-amber-500/30">
+                <i class="fa-solid fa-feather-pointed"></i>
+            </div>
+            <div>
+                <h1 class="text-xl md:text-2xl font-extrabold tracking-tight bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+                    Jeu de l'Oie
+                </h1>
+                <p class="text-xs text-slate-400 font-medium">Classic Game of the Goose</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-3 mt-2 sm:mt-0">
+            <button onclick="openSetupModal()" class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-xl transition border border-slate-600/50 shadow-md flex items-center gap-2">
+                <i class="fa-solid fa-rotate"></i> New Game / Setup
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container Layout matching reference image -->
+    <main class="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-12 gap-5 items-start relative">
+
+        <!-- Special Event Alert Banner -->
+        <div id="eventBanner" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-40 max-w-lg w-11/12 bg-slate-900/95 border-2 rounded-2xl p-4 shadow-2xl backdrop-blur-md banner-animated flex items-center gap-4">
+            <div id="bannerIcon" class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0 shadow-lg"></div>
+            <div class="flex-grow">
+                <h4 id="bannerTitle" class="text-sm font-extrabold uppercase tracking-wide">Special Square!</h4>
+                <p id="bannerDesc" class="text-xs text-slate-300 font-medium mt-0.5"></p>
+            </div>
+        </div>
+
+        <!-- LEFT PANEL: Game Board (8 cols on large screens) -->
+        <section class="lg:col-span-8 bg-slate-800/60 backdrop-blur-lg rounded-3xl p-3 md:p-5 border border-slate-700/80 shadow-2xl flex flex-col items-center justify-center relative overflow-hidden">
+            <!-- Board Canvas Area -->
+            <div class="w-full flex justify-center items-center">
+                <div id="boardContainer" class="board-container bg-slate-900/95 rounded-2xl border-2 border-slate-700/80 shadow-inner relative overflow-hidden">
+                    <!-- SVG lines connecting spaces in a spiral -->
+                    <svg id="spiralPathSvg" class="absolute inset-0 w-full h-full pointer-events-none" stroke-width="3" fill="none"></svg>
+                    
+                    <!-- Board Cells rendered here via JS -->
+                    <div id="boardCells" class="absolute inset-0 p-1"></div>
+
+                    <!-- Floating Player Tokens layer -->
+                    <div id="tokensContainer" class="absolute inset-0 pointer-events-none z-30"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT SIDEBAR: Controls & Player Status (4 cols on large screens) -->
+        <section class="lg:col-span-4 flex flex-col gap-5 w-full">
+
+            <!-- TOP RIGHT PANEL: Dice Roll Control -->
+            <div class="bg-slate-800/90 backdrop-blur-lg rounded-3xl p-5 border border-slate-700/80 shadow-2xl flex flex-col items-center text-center relative overflow-hidden">
+                <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-amber-500 to-indigo-500"></div>
+                
+                <div class="w-full flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                        <i class="fa-solid fa-dice text-amber-400"></i> Dice Control
+                    </span>
+                    <span id="turnIndicator" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-700 text-slate-300">
+                        Awaiting Setup...
+                    </span>
+                </div>
+
+                <!-- Dice Visual Container -->
+                <div class="flex items-center justify-center gap-5 my-2 py-1">
+                    <!-- Die 1 -->
+                    <div id="die1" class="dice">
+                        <div></div><div></div><div></div>
+                        <div></div><div class="dot"></div><div></div>
+                        <div></div><div></div><div></div>
+                    </div>
+                    <!-- Plus Sign -->
+                    <span class="text-slate-500 font-bold text-xl">+</span>
+                    <!-- Die 2 -->
+                    <div id="die2" class="dice">
+                        <div></div><div></div><div></div>
+                        <div></div><div class="dot"></div><div></div>
+                        <div></div><div></div><div></div>
+                    </div>
+                </div>
+
+                <!-- Roll Total Banner -->
+                <div class="mb-3">
+                    <div id="diceTotalDisplay" class="text-slate-300 font-semibold text-xs">
+                        Last Roll: <span id="diceTotalVal" class="text-amber-400 font-extrabold text-base">0</span>
+                    </div>
+                </div>
+
+                <!-- Roll Button -->
+                <button id="rollBtn" disabled onclick="handleRollDice()" class="w-full py-3.5 px-6 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 opacity-50 cursor-not-allowed text-slate-950 font-extrabold rounded-2xl shadow-lg shadow-amber-500/20 transition duration-200 uppercase tracking-wide flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-dice-five text-lg"></i>
+                    <span>Roll The Dice</span>
+                </button>
+            </div>
+
+            <!-- BOTTOM RIGHT PANEL: Player Status List -->
+            <div class="bg-slate-800/90 backdrop-blur-lg rounded-3xl p-5 border border-slate-700/80 shadow-2xl flex flex-col flex-grow">
+                <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-700/60">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                        <i class="fa-solid fa-users text-indigo-400"></i> Player Roster (<span id="playerCountLabel">0</span>)
+                    </h2>
+                    <span class="text-xs text-slate-400">Status</span>
+                </div>
+
+                <!-- Player List Cards -->
+                <div id="playersList" class="flex flex-col gap-2 mb-3 max-h-56 overflow-y-auto pr-1">
+                    <!-- Populated dynamically by JS -->
+                </div>
+
+                <!-- Game Activity Log -->
+                <div class="mt-auto pt-3 border-t border-slate-700/60">
+                    <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Game Activity Log
+                    </div>
+                    <div id="gameLog" class="h-28 overflow-y-auto text-xs space-y-1.5 pr-2 font-mono text-slate-300">
+                        <p class="text-slate-500 italic">Please configure players in the setup screen to begin.</p>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- MANDATORY Pre-Game Setup Overlay (Appears immediately before game starts) -->
+    <div id="setupModal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 transition-opacity duration-300">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl p-6 md:p-8 max-w-xl w-full shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/15 rounded-full blur-2xl pointer-events-none"></div>
+            <div class="absolute -bottom-12 -left-12 w-32 h-32 bg-indigo-500/15 rounded-full blur-2xl pointer-events-none"></div>
+
+            <div class="text-center mb-5">
+                <div class="w-14 h-14 bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 rounded-2xl mx-auto flex items-center justify-center text-2xl mb-3 shadow-lg shadow-amber-500/20 font-black">
+                    <i class="fa-solid fa-users-gear"></i>
+                </div>
+                <h2 class="text-2xl font-black text-white">Player Configuration</h2>
+                <p class="text-xs text-slate-400 mt-1">Select 2 to 6 players and customize names & colors before starting</p>
+            </div>
+
+            <!-- Player Count Selector -->
+            <div class="bg-slate-800/80 p-4 rounded-2xl border border-slate-700/80 mb-5">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2 text-center">
+                    Number of Players: <span id="setupCountDisplay" class="text-amber-400 font-extrabold text-base">4</span>
+                </label>
+                <div class="flex justify-center items-center gap-2">
+                    <button onclick="setPlayerCount(2)" class="btn-count-num flex-1 py-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 text-xs font-bold transition">2</button>
+                    <button onclick="setPlayerCount(3)" class="btn-count-num flex-1 py-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 text-xs font-bold transition">3</button>
+                    <button onclick="setPlayerCount(4)" class="btn-count-num flex-1 py-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 text-xs font-bold transition">4</button>
+                    <button onclick="setPlayerCount(5)" class="btn-count-num flex-1 py-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 text-xs font-bold transition">5</button>
+                    <button onclick="setPlayerCount(6)" class="btn-count-num flex-1 py-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 text-xs font-bold transition">6</button>
+                </div>
+            </div>
+
+            <!-- Player Name & Color Config List -->
+            <div id="playerConfigList" class="flex flex-col gap-2.5 overflow-y-auto mb-6 pr-1 max-h-60">
+                <!-- Config items rendered via JS -->
+            </div>
+
+            <!-- Start Game Button -->
+            <button onclick="startGameFromSetup()" class="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-2xl shadow-lg shadow-amber-500/25 transition duration-200 uppercase tracking-wider text-sm flex items-center justify-center gap-2 mt-auto">
+                <i class="fa-solid fa-play"></i>
+                <span>Start Game</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Victory Modal -->
+    <div id="victoryModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 md:p-8 max-w-md w-full text-center shadow-2xl transform scale-95 transition-transform duration-300 relative overflow-hidden">
+            <div class="absolute -top-12 -left-12 w-32 h-32 bg-amber-500/20 rounded-full blur-2xl"></div>
+            <div class="absolute -bottom-12 -right-12 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl"></div>
+            
+            <div class="w-20 h-20 bg-amber-500/20 border-2 border-amber-500 text-amber-400 rounded-3xl mx-auto flex items-center justify-center text-3xl mb-4 shadow-lg shadow-amber-500/30">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+
+            <h3 id="winnerTitle" class="text-2xl font-black text-white mb-2">Player Wins!</h3>
+            <p id="winnerMessage" class="text-slate-300 text-sm mb-6">Landed exactly on Square 63 and reached the Goal!</p>
+
+            <button onclick="closeVictoryModal(); openSetupModal();" class="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold rounded-2xl shadow-lg shadow-amber-500/20 transition uppercase tracking-wide">
+                Start New Game
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript Game Logic -->
+    <script>
+        // Color options for selection
+        const COLOR_OPTIONS = [
+            { id: "rose", name: "Red", color: "bg-rose-500", border: "border-rose-400", text: "text-rose-400", hex: "#f43f5e", avatar: "fa-crow" },
+            { id: "sky", name: "Blue", color: "bg-sky-500", border: "border-sky-400", text: "text-sky-400", hex: "#0ea5e9", avatar: "fa-kiwi-bird" },
+            { id: "emerald", name: "Green", color: "bg-emerald-500", border: "border-emerald-400", text: "text-emerald-400", hex: "#10b981", avatar: "fa-dove" },
+            { id: "amber", name: "Yellow", color: "bg-amber-500", border: "border-amber-400", text: "text-amber-400", hex: "#f59e0b", avatar: "fa-feather" },
+            { id: "purple", name: "Purple", color: "bg-purple-500", border: "border-purple-400", text: "text-purple-400", hex: "#a855f7", avatar: "fa-dragon" },
+            { id: "orange", name: "Orange", color: "bg-orange-500", border: "border-orange-400", text: "text-orange-400", hex: "#f97316", avatar: "fa-cat" }
+        ];
+
+        const TOTAL_SQUARES = 63;
+
+        // Definition of Special Board Squares
+        const SPECIAL_SQUARES = {
+            9:  { name: "Goose", type: "goose", icon: "🪿", faIcon: "fa-feather", color: "amber", border: "border-amber-400/80", bg: "bg-amber-500/20", text: "text-amber-300", desc: "Double your roll move!" },
+            18: { name: "Goose", type: "goose", icon: "🪿", faIcon: "fa-feather", color: "amber", border: "border-amber-400/80", bg: "bg-amber-500/20", text: "text-amber-300", desc: "Double your roll move!" },
+            27: { name: "Goose", type: "goose", icon: "🪿", faIcon: "fa-feather", color: "amber", border: "border-amber-400/80", bg: "bg-amber-500/20", text: "text-amber-300", desc: "Double your roll move!" },
+            36: { name: "Goose", type: "goose", icon: "🪿", faIcon: "fa-feather", color: "amber", border: "border-amber-400/80", bg: "bg-amber-500/20", text: "text-amber-300", desc: "Double your roll move!" },
+            45: { name: "Goose", type: "goose", icon: "🪿", faIcon: "fa-feather", color: "amber", border: "border-amber-400/80", bg: "bg-amber-500/20", text: "text-amber-300", desc: "Double your roll move!" },
+            54: { name: "Goose", type: "goose", icon: "🪿", faIcon: "fa-feather", color: "amber", border: "border-amber-400/80", bg: "bg-amber-500/20", text: "text-amber-300", desc: "Double your roll move!" },
+            
+            6:  { name: "The Bridge", type: "bridge", icon: "🌉", faIcon: "fa-bridge", color: "sky", border: "border-sky-400/80", bg: "bg-sky-500/20", text: "text-sky-300", desc: "Skip ahead to Square 12!" },
+            19: { name: "The Inn", type: "inn", icon: "🏨", faIcon: "fa-hotel", color: "orange", border: "border-orange-400/80", bg: "bg-orange-500/20", text: "text-orange-300", desc: "Resting! Miss your next turn." },
+            31: { name: "The Well", type: "well", icon: "🕳️", faIcon: "fa-water", color: "cyan", border: "border-cyan-400/80", bg: "bg-cyan-500/20", text: "text-cyan-300", desc: "Trapped in the Well until rescued!" },
+            42: { name: "The Labyrinth", type: "labyrinth", icon: "🌀", faIcon: "fa-compass", color: "purple", border: "border-purple-400/80", bg: "bg-purple-500/20", text: "text-purple-300", desc: "Got lost! Go back to Square 30." },
+            52: { name: "The Prison", type: "prison", icon: "⛓️", faIcon: "fa-dungeon", color: "slate", border: "border-slate-400/80", bg: "bg-slate-700/60", text: "text-slate-300", desc: "Trapped in Prison until rescued!" },
+            58: { name: "The Skull", type: "skull", icon: "💀", faIcon: "fa-skull", color: "rose", border: "border-rose-500/80", bg: "bg-rose-500/25", text: "text-rose-400", desc: "Death! Return back to Square 1." }
+        };
+
+        // Active Player Roster
+        let activePlayers = [];
+        let playerPositions = [];
+        let playerStates = [];
+        let currentTurn = 0;
+        let isRolling = false;
+        let gridCoords = [];
+
+        // Temporary Setup State (Min 2, Max 6, Default 4)
+        let setupPlayerCount = 4;
+        let setupPlayerData = [
+            { name: "Player 1", colorIdx: 0 },
+            { name: "Player 2", colorIdx: 1 },
+            { name: "Player 3", colorIdx: 2 },
+            { name: "Player 4", colorIdx: 3 },
+            { name: "Player 5", colorIdx: 4 },
+            { name: "Player 6", colorIdx: 5 }
+        ];
+
+        // Initialization: Shows overlay IMMEDIATELY on load
+        window.addEventListener('load', () => {
+            calculateSpiralCoords();
+            renderBoardCells();
+            openSetupModal(); // Display setup overlay before any game starts
+            window.addEventListener('resize', handleResize);
+        });
+
+        function handleResize() {
+            calculateSpiralCoords();
+            renderBoardCells();
+            if (activePlayers.length > 0) {
+                updateTokenPositions();
+            }
+        }
+
+        /**
+         * Setup Modal Controls
+         */
+        function openSetupModal() {
+            renderSetupConfigList();
+            const modal = document.getElementById('setupModal');
+            modal.classList.remove('hidden');
+        }
+
+        function closeSetupModal() {
+            const modal = document.getElementById('setupModal');
+            modal.classList.add('hidden');
+        }
+
+        function setPlayerCount(num) {
+            setupPlayerCount = Math.max(2, Math.min(6, num));
+            document.getElementById('setupCountDisplay').innerText = setupPlayerCount;
+            renderSetupConfigList();
+        }
+
+        function renderSetupConfigList() {
+            const container = document.getElementById('playerConfigList');
+            container.innerHTML = '';
+
+            for (let i = 0; i < setupPlayerCount; i++) {
+                const data = setupPlayerData[i];
+                const selectedColor = COLOR_OPTIONS[data.colorIdx];
+
+                const card = document.createElement('div');
+                card.className = "p-3 bg-slate-800/90 rounded-2xl border border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3";
+
+                // Color picker options html
+                let colorPickerHtml = `<div class="flex items-center gap-1.5">`;
+                COLOR_OPTIONS.forEach((opt, cIdx) => {
+                    const isSelected = cIdx === data.colorIdx;
+                    colorPickerHtml += `
+                        <button onclick="updatePlayerColor(${i}, ${cIdx})" class="w-6 h-6 rounded-full ${opt.color} transition transform ${isSelected ? 'ring-2 ring-white scale-110 shadow-md' : 'opacity-50 hover:opacity-100'}">
+                        </button>
+                    `;
+                });
+                colorPickerHtml += `</div>`;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 w-full sm:w-auto">
+                        <div class="w-8 h-8 rounded-xl ${selectedColor.color} text-slate-950 flex items-center justify-center font-bold text-xs shadow-md shrink-0">
+                            <i class="fa-solid ${selectedColor.avatar}"></i>
+                        </div>
+                        <input type="text" value="${data.name}" onchange="updatePlayerName(${i}, this.value)" 
+                            class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-amber-500 w-full sm:w-36">
+                    </div>
+                    ${colorPickerHtml}
+                `;
+                container.appendChild(card);
+            }
+
+            // Sync count display and button styles
+            document.getElementById('setupCountDisplay').innerText = setupPlayerCount;
+            const buttons = document.querySelectorAll('.btn-count-num');
+            buttons.forEach(btn => {
+                if (parseInt(btn.innerText) === setupPlayerCount) {
+                    btn.className = "btn-count-num flex-1 py-2 rounded-xl border-2 border-amber-500 bg-amber-500/20 text-amber-300 text-xs font-black shadow-md transition";
+                } else {
+                    btn.className = "btn-count-num flex-1 py-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-bold transition";
+                }
+            });
+        }
+
+        function updatePlayerName(idx, val) {
+            setupPlayerData[idx].name = val.trim() || `Player ${idx + 1}`;
+        }
+
+        function updatePlayerColor(playerIdx, colorIdx) {
+            setupPlayerData[playerIdx].colorIdx = colorIdx;
+            renderSetupConfigList();
+        }
+
+        /**
+         * Initialize Game with chosen player settings
+         */
+        function startGameFromSetup() {
+            activePlayers = [];
+            playerPositions = [];
+            playerStates = [];
+
+            for (let i = 0; i < setupPlayerCount; i++) {
+                const conf = setupPlayerData[i];
+                const col = COLOR_OPTIONS[conf.colorIdx];
+                activePlayers.push({
+                    id: i,
+                    name: conf.name || `Player ${i + 1}`,
+                    color: col.color,
+                    border: col.border,
+                    text: col.text,
+                    hex: col.hex,
+                    avatar: col.avatar
+                });
+                playerPositions.push(0);
+                playerStates.push({ turnsToSkip: 0, trappedIn: null });
+            }
+
+            currentTurn = 0;
+            isRolling = false;
+
+            document.getElementById('playerCountLabel').innerText = activePlayers.length;
+            document.getElementById('diceTotalVal').innerText = '0';
+            document.getElementById('gameLog').innerHTML = `<p class="text-slate-500 italic">Game initialized with ${activePlayers.length} players! ${activePlayers[0].name} goes first.</p>`;
+
+            const rollBtn = document.getElementById('rollBtn');
+            rollBtn.disabled = false;
+            rollBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            closeSetupModal();
+            updateTurnHeader();
+            renderPlayersList();
+            updateTokenPositions();
+        }
+
+        /**
+         * Calculate rectangular spiral coords
+         */
+        function calculateSpiralCoords() {
+            gridCoords = [];
+            const cols = 10;
+            const rows = 7;
+            
+            let minC = 0, maxC = cols - 1;
+            let minR = 0, maxR = rows - 1;
+            let path = [];
+
+            while (minC <= maxC && minR <= maxR && path.length <= TOTAL_SQUARES) {
+                for (let c = minC; c <= maxC && path.length <= TOTAL_SQUARES; c++) path.push({ col: c, row: minR });
+                minR++;
+                for (let r = minR; r <= maxR && path.length <= TOTAL_SQUARES; r++) path.push({ col: maxC, row: r });
+                maxC--;
+                for (let c = maxC; c >= minC && path.length <= TOTAL_SQUARES; c--) path.push({ col: c, row: maxR });
+                maxR--;
+                for (let r = maxR; r >= minR && path.length <= TOTAL_SQUARES; r--) path.push({ col: minC, row: r });
+                minC++;
+            }
+
+            gridCoords = path.slice(0, TOTAL_SQUARES + 1).map(pt => ({
+                x: ((pt.col + 0.5) / cols) * 100,
+                y: ((pt.row + 0.5) / rows) * 100
+            }));
+        }
+
+        /**
+         * Render board cells & special badges
+         */
+        function renderBoardCells() {
+            const cellsContainer = document.getElementById('boardCells');
+            const svgPath = document.getElementById('spiralPathSvg');
+            cellsContainer.innerHTML = '';
+
+            let dPath = '';
+
+            gridCoords.forEach((coord, idx) => {
+                dPath += (idx === 0) ? `M ${coord.x}% ${coord.y}%` : ` L ${coord.x}% ${coord.y}%`;
+
+                const cell = document.createElement('div');
+                cell.className = `absolute transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-between p-1 rounded-xl font-extrabold text-xs transition border shadow-md `;
+                
+                cell.style.left = `${coord.x}%`;
+                cell.style.top = `${coord.y}%`;
+                cell.style.width = `8.5%`;
+                cell.style.height = `12.5%`;
+
+                const special = SPECIAL_SQUARES[idx];
+
+                if (idx === 0) {
+                    cell.className += 'bg-slate-800 border-indigo-500/80 text-indigo-300 z-10';
+                    cell.innerHTML = `<span class="text-[9px] uppercase tracking-tighter text-indigo-400 font-black">START</span>`;
+                } else if (idx === 63) {
+                    cell.className += 'bg-gradient-to-br from-amber-500 to-amber-700 border-amber-300 text-slate-950 font-black z-10 shadow-amber-500/30';
+                    cell.innerHTML = `<span class="text-[10px]">🏆 GOAL</span><span class="text-sm">63</span>`;
+                } else if (special) {
+                    cell.className += `${special.bg} ${special.border} ${special.text} z-10`;
+                    cell.title = `${special.name}: ${special.desc}`;
+                    cell.innerHTML = `
+                        <span class="text-[10px] leading-none">${special.icon}</span>
+                        <span class="text-[11px] font-black leading-none">${idx}</span>
+                    `;
+                } else {
+                    cell.className += 'bg-slate-800/80 border-slate-700/70 text-slate-300 hover:border-slate-500';
+                    cell.innerHTML = `<span class="text-[11px] font-bold">${idx}</span>`;
+                }
+
+                cellsContainer.appendChild(cell);
+            });
+
+            svgPath.innerHTML = `<path d="${dPath}" fill="none" stroke="#334155" stroke-width="3" stroke-dasharray="4 4"/>`;
+        }
+
+        /**
+         * Render sidebar player status panel
+         */
+        function renderPlayersList() {
+            const listContainer = document.getElementById('playersList');
+            listContainer.innerHTML = '';
+
+            activePlayers.forEach(player => {
+                const isActive = player.id === currentTurn;
+                const pos = playerPositions[player.id];
+                const state = playerStates[player.id];
+
+                let statusBadge = '';
+                if (pos === 63) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">Winner</span>`;
+                } else if (state.trappedIn === 'well') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">🕳️ Well</span>`;
+                } else if (state.trappedIn === 'prison') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700 text-slate-300 border border-slate-600">⛓️ Prison</span>`;
+                } else if (state.turnsToSkip > 0) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">🏨 Resting</span>`;
+                } else if (isActive) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30">Turn</span>`;
+                }
+
+                const card = document.createElement('div');
+                card.className = `p-2 rounded-2xl border transition-all duration-300 flex items-center justify-between ${
+                    isActive 
+                        ? `bg-slate-800 border-amber-500/80 active-turn-ring` 
+                        : `bg-slate-900/60 border-slate-800 opacity-85`
+                }`;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-xl ${player.color} text-slate-950 flex items-center justify-center font-bold text-xs shadow-md shrink-0">
+                            <i class="fa-solid ${player.avatar}"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="font-bold text-xs text-slate-100 truncate max-w-[90px]">${player.name}</span>
+                                ${statusBadge}
+                            </div>
+                            <span class="text-[10px] text-slate-400">Position: <strong class="${player.text}">Sq ${pos}</strong></span>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <span class="text-xs font-mono font-bold text-slate-400">${pos}/63</span>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        /**
+         * Update floating player tokens on the spiral board
+         */
+        function updateTokenPositions() {
+            const tokensContainer = document.getElementById('tokensContainer');
+            tokensContainer.innerHTML = '';
+
+            activePlayers.forEach(player => {
+                const pos = playerPositions[player.id];
+                const coord = gridCoords[pos] || gridCoords[0];
+
+                const playersOnSameSquare = activePlayers.filter(p => playerPositions[p.id] === pos);
+                const playerIndexOnSquare = playersOnSameSquare.findIndex(p => p.id === player.id);
+                
+                let offsetX = 0, offsetY = 0;
+                if (playersOnSameSquare.length > 1) {
+                    const offsets = [
+                        { x: -8, y: -8 },
+                        { x: 8, y: -8 },
+                        { x: -8, y: 8 },
+                        { x: 8, y: 8 },
+                        { x: 0, y: -11 },
+                        { x: 0, y: 11 }
+                    ];
+                    offsetX = offsets[playerIndexOnSquare]?.x || 0;
+                    offsetY = offsets[playerIndexOnSquare]?.y || 0;
+                }
+
+                const token = document.createElement('div');
+                token.id = `token-${player.id}`;
+                token.className = `player-token absolute w-5 h-5 md:w-6 md:h-6 rounded-full ${player.color} border-2 border-white flex items-center justify-center text-[9px] md:text-[10px] font-extrabold text-slate-950 z-30 transform -translate-x-1/2 -translate-y-1/2`;
+                
+                token.style.left = `calc(${coord.x}% + ${offsetX}px)`;
+                token.style.top = `calc(${coord.y}% + ${offsetY}px)`;
+                token.innerHTML = `<i class="fa-solid ${player.avatar}"></i>`;
+
+                tokensContainer.appendChild(token);
+            });
+        }
+
+        function updateTurnHeader() {
+            if (!activePlayers.length) return;
+            const player = activePlayers[currentTurn];
+            const indicator = document.getElementById('turnIndicator');
+            indicator.innerText = `${player.name}'s Turn`;
+            indicator.className = `text-xs font-bold px-2.5 py-1 rounded-full ${player.color} text-slate-950 shadow-md`;
+        }
+
+        /**
+         * Dice Rolling Logic
+         */
+        function handleRollDice() {
+            if (isRolling || !activePlayers.length) return;
+
+            const player = activePlayers[currentTurn];
+            const state = playerStates[currentTurn];
+
+            // Handle turn skip / trap states before rolling
+            if (state.turnsToSkip > 0) {
+                state.turnsToSkip--;
+                showBanner('🏨 Resting at the Inn', `${player.name} is resting and skips this turn!`, 'bg-orange-500/20', 'border-orange-500', 'text-orange-400', '🏨');
+                logMessage(`${player.name} skipped turn due to resting at the Inn.`);
+                advanceTurn();
+                return;
+            }
+
+            if (state.trappedIn === 'well') {
+                showBanner('🕳️ Trapped in the Well', `${player.name} cannot move until another player lands on Square 31 to rescue them!`, 'bg-cyan-500/20', 'border-cyan-500', 'text-cyan-300', '🕳️');
+                logMessage(`${player.name} is trapped in the Well and cannot roll.`);
+                advanceTurn();
+                return;
+            }
+
+            if (state.trappedIn === 'prison') {
+                showBanner('⛓️ Trapped in Prison', `${player.name} cannot move until another player lands on Square 52 to rescue them!`, 'bg-slate-700', 'border-slate-500', 'text-slate-300', '⛓️');
+                logMessage(`${player.name} is in Prison and cannot roll.`);
+                advanceTurn();
+                return;
+            }
+
+            isRolling = true;
+            const rollBtn = document.getElementById('rollBtn');
+            rollBtn.disabled = true;
+            rollBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            const die1El = document.getElementById('die1');
+            const die2El = document.getElementById('die2');
+            die1El.classList.add('rolling');
+            die2El.classList.add('rolling');
+
+            let rollsCount = 0;
+            const interval = setInterval(() => {
+                const temp1 = Math.floor(Math.random() * 6) + 1;
+                const temp2 = Math.floor(Math.random() * 6) + 1;
+                renderDieFace(die1El, temp1);
+                renderDieFace(die2El, temp2);
+                rollsCount++;
+
+                if (rollsCount >= 10) {
+                    clearInterval(interval);
+                    
+                    const die1 = Math.floor(Math.random() * 6) + 1;
+                    const die2 = Math.floor(Math.random() * 6) + 1;
+                    const diceRoll = die1 + die2;
+
+                    die1El.classList.remove('rolling');
+                    die2El.classList.remove('rolling');
+
+                    renderDieFace(die1El, die1);
+                    renderDieFace(die2El, die2);
+
+                    document.getElementById('diceTotalVal').innerText = diceRoll;
+                    logMessage(`${player.name} rolled <span class="font-bold text-amber-400">${die1} + ${die2} = ${diceRoll}</span>`);
+
+                    // Execute move step by step
+                    executeMoveSequence(currentTurn, diceRoll);
+                }
+            }, 50);
+        }
+
+        function renderDieFace(dieEl, val) {
+            dieEl.innerHTML = '';
+            const dotPositions = {
+                1: [4],
+                2: [0, 8],
+                3: [0, 4, 8],
+                4: [0, 2, 6, 8],
+                5: [0, 2, 4, 6, 8],
+                6: [0, 2, 3, 5, 6, 8]
+            };
+
+            const activeDots = dotPositions[val] || [];
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                if (activeDots.includes(i)) cell.className = 'dot';
+                dieEl.appendChild(cell);
+            }
+        }
+
+        /**
+         * Step-by-step movement with support for Special Squares & Chaining (Geese)
+         */
+        async function executeMoveSequence(playerId, diceRoll) {
+            const player = activePlayers[playerId];
+            let currentPos = playerPositions[playerId];
+            let targetPos = currentPos + diceRoll;
+
+            // Step 1: Animate primary move die roll
+            currentPos = await animateStepByStep(playerId, currentPos, targetPos);
+
+            // Step 2: Handle special squares resolution (Recursively loop if landing on Goose)
+            let resolveSpecial = true;
+
+            while (resolveSpecial) {
+                resolveSpecial = false;
+                const special = SPECIAL_SQUARES[currentPos];
+
+                if (!special) break;
+
+                // Landed on a special square!
+                if (special.type === 'goose') {
+                    showBanner(`🪿 Landed on Goose!`, `${player.name} doubles move! Advancing +${diceRoll} squares again!`, 'bg-amber-500/20', 'border-amber-500', 'text-amber-300', '🪿');
+                    logMessage(`${player.name} landed on Goose (${currentPos})! Moving forward another +${diceRoll}.`);
+                    await new Promise(res => setTimeout(res, 900));
+
+                    targetPos = currentPos + diceRoll;
+                    currentPos = await animateStepByStep(playerId, currentPos, targetPos);
+                    resolveSpecial = true; // Check if the next space is also a Goose (chaining)
+                } 
+                else if (special.type === 'bridge') {
+                    showBanner(`🌉 The Bridge (Square 6)`, `${player.name} slides across the bridge directly to Square 12!`, 'bg-sky-500/20', 'border-sky-500', 'text-sky-300', '🌉');
+                    logMessage(`${player.name} took the Bridge to Square 12.`);
+                    await new Promise(res => setTimeout(res, 900));
+
+                    currentPos = await animateStepByStep(playerId, currentPos, 12);
+                } 
+                else if (special.type === 'inn') {
+                    playerStates[playerId].turnsToSkip = 1;
+                    showBanner(`🏨 The Inn (Square 19)`, `${player.name} rests at the Inn and will miss their next turn!`, 'bg-orange-500/20', 'border-orange-500', 'text-orange-300', '🏨');
+                    logMessage(`${player.name} is resting at the Inn (skips 1 turn).`);
+                } 
+                else if (special.type === 'well') {
+                    rescueTrappedPlayers('well', playerId);
+                    playerStates[playerId].trappedIn = 'well';
+                    showBanner(`🕳️ The Well (Square 31)`, `${player.name} fell into the Well! Trapped until rescued by another player landing here.`, 'bg-cyan-500/20', 'border-cyan-500', 'text-cyan-300', '🕳️');
+                    logMessage(`${player.name} is trapped in the Well!`);
+                } 
+                else if (special.type === 'labyrinth') {
+                    showBanner(`🌀 The Labyrinth (Square 42)`, `${player.name} got lost in the maze! Returning to Square 30.`, 'bg-purple-500/20', 'border-purple-500', 'text-purple-300', '🌀');
+                    logMessage(`${player.name} got lost in Labyrinth! Retreating to Square 30.`);
+                    await new Promise(res => setTimeout(res, 900));
+
+                    currentPos = await animateStepByStep(playerId, currentPos, 30);
+                } 
+                else if (special.type === 'prison') {
+                    rescueTrappedPlayers('prison', playerId);
+                    playerStates[playerId].trappedIn = 'prison';
+                    showBanner(`⛓️ The Prison (Square 52)`, `${player.name} was locked in Prison! Trapped until another player lands here to rescue them.`, 'bg-slate-700', 'border-slate-500', 'text-slate-300', '⛓️');
+                    logMessage(`${player.name} is trapped in Prison!`);
+                } 
+                else if (special.type === 'skull') {
+                    showBanner(`💀 The Skull (Square 58)`, `DEATH! ${player.name} goes all the way back to Square 1!`, 'bg-rose-500/20', 'border-rose-500', 'text-rose-400', '💀');
+                    logMessage(`${player.name} hit Death (Skull)! Resetting back to Square 1.`);
+                    await new Promise(res => setTimeout(res, 900));
+
+                    currentPos = await animateStepByStep(playerId, currentPos, 1);
+                }
+            }
+
+            // Check if player rescued anyone on standard spaces or non-trap squares
+            if (currentPos !== 31 && playerStates[playerId].trappedIn === 'well') playerStates[playerId].trappedIn = null;
+            if (currentPos !== 52 && playerStates[playerId].trappedIn === 'prison') playerStates[playerId].trappedIn = null;
+
+            // Check Win Condition
+            if (currentPos === TOTAL_SQUARES) {
+                triggerWin(player);
+                return;
+            }
+
+            // Finish Turn
+            advanceTurn();
+        }
+
+        /**
+         * Helper to rescue trapped players when someone else lands on Well or Prison
+         */
+        function rescueTrappedPlayers(trapType, rescuerId) {
+            activePlayers.forEach(p => {
+                if (p.id !== rescuerId && playerStates[p.id].trappedIn === trapType) {
+                    playerStates[p.id].trappedIn = null;
+                    logMessage(`<span class="text-emerald-400 font-bold">${p.name} was rescued</span> from ${trapType} by ${activePlayers[rescuerId].name}!`);
+                }
+            });
+        }
+
+        /**
+         * Animates token step by step along the spiral
+         */
+        async function animateStepByStep(playerId, fromPos, toPos) {
+            let curr = fromPos;
+
+            if (toPos > TOTAL_SQUARES) {
+                // Overshot 63 -> Advance to 63 first, then bounce backward
+                const forwardSteps = TOTAL_SQUARES - fromPos;
+                const excess = toPos - TOTAL_SQUARES;
+
+                // Walk forward to 63
+                for (let i = 0; i < forwardSteps; i++) {
+                    curr++;
+                    playerPositions[playerId] = curr;
+                    updateTokenPositions();
+                    renderPlayersList();
+                    await new Promise(r => setTimeout(r, 200));
+                }
+
+                showBanner(`↩️ Overshot Square 63!`, `${activePlayers[playerId].name} bounced back ${excess} space(s)!`, 'bg-amber-500/20', 'border-amber-500', 'text-amber-300', '↩️');
+                logMessage(`${activePlayers[playerId].name} overshot 63 and bounced back ${excess} space(s).`);
+                await new Promise(r => setTimeout(r, 600));
+
+                // Bounce backward
+                for (let i = 0; i < excess; i++) {
+                    curr--;
+                    playerPositions[playerId] = curr;
+                    updateTokenPositions();
+                    renderPlayersList();
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            } else if (toPos >= fromPos) {
+                // Forward movement
+                while (curr < toPos) {
+                    curr++;
+                    playerPositions[playerId] = curr;
+                    updateTokenPositions();
+                    renderPlayersList();
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            } else {
+                // Backward movement (Labyrinth / Skull)
+                while (curr > toPos) {
+                    curr--;
+                    playerPositions[playerId] = curr;
+                    updateTokenPositions();
+                    renderPlayersList();
+                    await new Promise(r => setTimeout(r, 160));
+                }
+            }
+
+            return curr;
+        }
+
+        function advanceTurn() {
+            currentTurn = (currentTurn + 1) % activePlayers.length;
+            updateTurnHeader();
+            renderPlayersList();
+
+            const rollBtn = document.getElementById('rollBtn');
+            rollBtn.disabled = false;
+            rollBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            isRolling = false;
+        }
+
+        /**
+         * Show alert banner for special events
+         */
+        function showBanner(title, desc, bgClass, borderClass, textClass, icon) {
+            const banner = document.getElementById('eventBanner');
+            const iconEl = document.getElementById('bannerIcon');
+            const titleEl = document.getElementById('bannerTitle');
+            const descEl = document.getElementById('bannerDesc');
+
+            banner.className = `absolute top-4 left-1/2 -translate-x-1/2 z-40 max-w-lg w-11/12 bg-slate-900/95 border-2 ${borderClass} rounded-2xl p-3.5 shadow-2xl backdrop-blur-md banner-animated flex items-center gap-3.5`;
+            iconEl.className = `w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 ${bgClass} ${textClass} border ${borderClass}`;
+            iconEl.innerText = icon;
+
+            titleEl.className = `text-xs font-extrabold uppercase tracking-wide ${textClass}`;
+            titleEl.innerText = title;
+            descEl.innerText = desc;
+
+            banner.classList.remove('hidden');
+
+            setTimeout(() => {
+                banner.classList.add('hidden');
+            }, 3200);
+        }
+
+        function triggerWin(winner) {
+            logMessage(`<span class="text-amber-400 font-extrabold">🏆 ${winner.name} WINS THE GAME!</span>`);
+
+            const modal = document.getElementById('victoryModal');
+            document.getElementById('winnerTitle').innerText = `${winner.name} Wins!`;
+            document.getElementById('winnerMessage').innerText = `Landed exactly on Square 63! Congratulations!`;
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                modal.querySelector('div').classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeVictoryModal() {
+            const modal = document.getElementById('victoryModal');
+            modal.classList.add('opacity-0');
+            modal.querySelector('div').classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function logMessage(msg) {
+            const gameLog = document.getElementById('gameLog');
+            const logEntry = document.createElement('p');
+            logEntry.className = 'border-l-2 border-slate-700 pl-2 py-0.5 text-slate-300';
+            logEntry.innerHTML = msg;
+            gameLog.appendChild(logEntry);
+            gameLog.scrollTop = gameLog.scrollHeight;
+        }
+    </script>
+</body>
+</html>
